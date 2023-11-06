@@ -1,0 +1,3 @@
+let x = 24;
+let y = "abc";
+return x;
