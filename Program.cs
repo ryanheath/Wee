@@ -288,6 +288,8 @@ internal static class Interpreter
 {
     public static object Run(NodeProgram program)
     {
+        Dictionary<string, object> variables = new();
+
         foreach (var statement in program.Statements)
         {
             var value = RunStatement(statement);
@@ -298,25 +300,55 @@ internal static class Interpreter
         }
 
         return 0;
+
+        object? RunStatement(NodeStatement node)
+        {
+            // only return statements return a value
+            var r = node as NodeReturn;
+            if (r is not null)
+            {
+                return RunReturn(r);
+            }
+
+            switch (node)
+            {
+                case NodeLet l: RunLet(l); break;
+                default: throw new Exception($"unexpected node: {node}");
+            }
+
+            return null;
+        }
+
+
+        void RunLet(NodeLet node)
+        {
+            // assert variable is not already defined
+            if (variables.ContainsKey(node.Identifier.Name))
+            {
+                throw new Exception($"variable already defined: {node.Identifier.Name}");
+            }
+
+            variables[node.Identifier.Name] = RunValue(node.Value);
+        }
+
+        object RunReturn(NodeReturn node) => node.ReturnValue is null ? 0 : RunValue(node.ReturnValue);
+
+        object RunValue(NodeValue node) => node switch
+        {
+            NodeInteger i => i.Value,
+            NodeString s => s.Value,
+            NodeIdentifier i => RunIdentifier(i),
+            _ => throw new Exception($"unexpected node: {node}")
+        };
+
+        object RunIdentifier(NodeIdentifier node)
+        {
+            if (!variables.TryGetValue(node.Name, out var value))
+            {
+                throw new Exception($"variable not defined: {node.Name}");
+            }
+
+            return value;
+        }
     }
-
-    private static object? RunStatement(NodeStatement node) => node switch
-    {
-        NodeLet l => RunLet(l),
-        NodeReturn r => RunReturn(r),
-        _ => throw new Exception($"unexpected node: {node}")
-    };
-
-    private static object? RunLet(NodeLet node) => null;
-
-    private static object RunReturn(NodeReturn node) => RunValue(node.ReturnValue);
-
-    private static object RunValue(NodeValue? node) => node switch
-    {
-        NodeInteger i => i.Value,
-        NodeString s => s.Value,
-        NodeIdentifier i => i.Name,
-        null => 0,
-        _ => throw new Exception($"unexpected node: {node}")
-    };
 }
