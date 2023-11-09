@@ -125,6 +125,7 @@ internal static class Lexer
     {
         { "return", TokenKind.Return },
         { "let", TokenKind.Let },
+        { "print", TokenKind.Print },
     };
 }
 
@@ -144,6 +145,7 @@ internal enum TokenKind
     String,
     Return,
     Let,
+    Print,
 }
 
 internal record Token(TokenKind Kind);
@@ -194,6 +196,7 @@ internal static class Parser
             {
                 TokenKind.Return => ParseReturn(),
                 TokenKind.Let => ParseLet(),
+                TokenKind.Print => ParsePrint(),
                 _ => throw new Exception($"invalid token: {token}, expected statement")
             };
         }
@@ -222,6 +225,17 @@ internal static class Parser
             ConsumeToken(TokenKind.SemiColon);
 
             return new NodeLet(identifier, value);
+        }
+
+        NodeStatement ParsePrint()
+        {
+            ConsumeToken(TokenKind.Print);
+
+            var value = TryParseValue();
+
+            ConsumeToken(TokenKind.SemiColon);
+
+            return new NodePrint(value);
         }
 
         NodeIdentifier ParseIdentifier() => new (ConsumeTokenAs<TokenIdentifier>().Name);
@@ -282,6 +296,8 @@ internal record NodeReturn(NodeValue? ReturnValue) : NodeStatement;
 
 internal record NodeLet(NodeIdentifier Identifier, NodeValue Value) : NodeStatement;
 
+internal record NodePrint(NodeValue? PrintValue) : NodeStatement;
+
 internal record NodeProgram(IEnumerable<NodeStatement> Statements) : Node;
 
 internal static class Interpreter
@@ -313,6 +329,7 @@ internal static class Interpreter
             switch (node)
             {
                 case NodeLet l: RunLet(l); break;
+                case NodePrint p: RunPrint(p); break;
                 default: throw new Exception($"unexpected node: {node}");
             }
 
@@ -330,6 +347,8 @@ internal static class Interpreter
 
             variables[node.Identifier.Name] = RunValue(node.Value);
         }
+
+        void RunPrint(NodePrint node) => Console.WriteLine(node.PrintValue is null ? "" : RunValue(node.PrintValue));
 
         object RunReturn(NodeReturn node) => node.ReturnValue is null ? 0 : RunValue(node.ReturnValue);
 

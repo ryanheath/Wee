@@ -4,8 +4,9 @@ $$
     [\text{Statements}] &\to [\text{Statement}]^* \\
     [\text{Statement}] &\to
         \begin{cases}
-            \text{return}\ [\text{Expression}]; \\
+            \text{return}\ [\text{Expression}]^?; \\
             \text{let}\space\text{[identifier]} = [\text{Expression}]; \\
+            \text{print}\ [\text{Expression}]^?; \\
         \end{cases} \\
     [\text{Expression}] &\to
         \begin{cases}

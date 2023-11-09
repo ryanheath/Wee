@@ -1,3 +1,7 @@
 let x = 24;
 let y = "abc";
+print x;
+print;
+print "***";
+print y;
 return x;
