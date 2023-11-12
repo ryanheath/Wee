@@ -29,6 +29,20 @@ $$
         \begin{cases}
             [\text{Expression}]\ \text{or}\ [\text{Expression}]\\
             [\text{Expression}]\ \text{and}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{eq}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{lt}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{lte}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{gt}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{gte}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{neq}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{||}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{\&\&}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{=}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{<}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{<=}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{>}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{>=}\ [\text{Expression}]\\
+            [\text{Expression}]\ \text{!=}\ [\text{Expression}]\\
         \end{cases} \\
         \\
     [\text{Term}] &\to

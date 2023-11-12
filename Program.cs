@@ -56,26 +56,27 @@ internal static class Lexer
             return ch is '\'' or '"' ? ReadString() : ReadToken();
         }
 
-        Token ReadToken()
-        {
-            var ch = (char)reader.Read();
+        Token ReadToken() => ReadWord(ReadChars(IsTokenStartChar), allowIdentifier: false);
 
-            return TokenBinaryOperatorMap.TryGetValue(ch, out var kind) ? new TokenBinaryOperator(kind)
-                : TokenKindMap.TryGetValue(ch, out kind) ? new Token(kind)
-                : throw new Exception($"invalid character: '{ch}'");
-        }
+        static bool IsTokenStartChar(char ch) => 
+                TokenKeywordChars.Contains(ch)
+                || TokenBooleanChars.Contains(ch)
+                || TokenLogicalOperatorChars.Contains(ch)
+                || TokenBinaryOperatorChars.Contains(ch)
+                || TokenKindChars.Contains(ch);
 
         Token ReadInteger() => new TokenInteger(int.Parse(ReadChars(char.IsDigit)));
 
-        Token ReadText()
-        {
-            var word = ReadChars(char.IsAsciiLetterOrDigit);
+        Token ReadText() => ReadWord(ReadChars(char.IsAsciiLetterOrDigit), allowIdentifier: true);
 
-            return TokenKeywordMap.TryGetValue(word, out var kind) ? new Token(kind)
-                : TokenBooleanMap.TryGetValue(word, out kind) ? new TokenBoolean(kind == TokenKind.True)
-                : TokenLogicalOperatorMap.TryGetValue(word, out kind) ? new TokenLogicalOperator(kind)
-                : new TokenIdentifier(word);
-        }
+        Token ReadWord(string word, bool allowIdentifier) =>
+            TokenKeywordMap.TryGetValue(word, out var kind) ? new Token(kind)
+            : TokenBooleanMap.TryGetValue(word, out kind) ? new TokenBoolean(kind == TokenKind.True)
+            : TokenLogicalOperatorMap.TryGetValue(word, out kind) ? new TokenLogicalOperator(kind)
+            : TokenBinaryOperatorMap.TryGetValue(word, out kind) ? new TokenBinaryOperator(kind)
+            : TokenKindMap.TryGetValue(word, out kind) ? new Token(kind)
+            : allowIdentifier ? new TokenIdentifier(word)
+            : throw new Exception($"invalid: '{word}'");
 
         Token ReadString()
         {
@@ -111,13 +112,14 @@ internal static class Lexer
         }
     }
 
-    static readonly Dictionary<char, TokenKind> TokenKindMap = new()
+    static readonly Dictionary<string, TokenKind> TokenKindMap = new()
     {
-        { '(', TokenKind.LParen },
-        { ')', TokenKind.RParen },
-        { ';', TokenKind.SemiColon },
-        { '=', TokenKind.Equal },
+        { "(", TokenKind.LParen },
+        { ")", TokenKind.RParen },
+        { ";", TokenKind.SemiColon },
+        { "=", TokenKind.Equal },
     };
+    static readonly HashSet<char> TokenKindChars = new(TokenKindMap.Keys.SelectMany(ch => ch));
 
     static readonly Dictionary<string, TokenKind> TokenKeywordMap = new()
     {
@@ -125,26 +127,44 @@ internal static class Lexer
         { "let", TokenKind.Let },
         { "print", TokenKind.Print },
     };
+    static readonly HashSet<char> TokenKeywordChars = new(TokenKeywordMap.Keys.SelectMany(ch => ch));
 
     static readonly Dictionary<string, TokenKind> TokenBooleanMap = new()
     {
         { "true", TokenKind.True },
         { "false", TokenKind.False },
     };
+    static readonly HashSet<char> TokenBooleanChars = new(TokenBooleanMap.Keys.SelectMany(ch => ch));
 
     static readonly Dictionary<string, TokenKind> TokenLogicalOperatorMap = new()
     {
+        { "||", TokenKind.Or },
+        { "&&", TokenKind.And },
+        { "<", TokenKind.Less },
+        { ">", TokenKind.Greater },
+        { "<=", TokenKind.LessOrEqual },
+        { ">=", TokenKind.GreaterOrEqual },
+        { "!=", TokenKind.NotEqual },
+        { "=", TokenKind.Equal },
         { "or", TokenKind.Or },
         { "and", TokenKind.And },
+        { "lt", TokenKind.Less },
+        { "gt", TokenKind.Greater },
+        { "lte", TokenKind.LessOrEqual },
+        { "gte", TokenKind.GreaterOrEqual },
+        { "neq", TokenKind.NotEqual },
+        { "eq", TokenKind.Equal },
     };
+    static readonly HashSet<char> TokenLogicalOperatorChars = new(TokenLogicalOperatorMap.Keys.SelectMany(ch => ch));
 
-    static readonly Dictionary<char, TokenKind> TokenBinaryOperatorMap = new()
+    static readonly Dictionary<string, TokenKind> TokenBinaryOperatorMap = new()
     {
-        { '+', TokenKind.Plus },
-        { '-', TokenKind.Minus },
-        { '*', TokenKind.Asterisk },
-        { '/', TokenKind.Slash },
+        { "+", TokenKind.Plus },
+        { "-", TokenKind.Minus },
+        { "*", TokenKind.Asterisk },
+        { "/", TokenKind.Slash },
     };
+    static readonly HashSet<char> TokenBinaryOperatorChars = new(TokenBinaryOperatorMap.Keys.SelectMany(ch => ch));
 }
 
 internal enum TokenKind
@@ -169,6 +189,11 @@ internal enum TokenKind
     Boolean,
     And,
     Or,
+    Less,
+    Greater,
+    LessOrEqual,
+    GreaterOrEqual,
+    NotEqual,
 }
 
 internal record Token(TokenKind Kind);
@@ -487,12 +512,36 @@ internal static class Interpreter
             {
                 TokenKind.And => RunAnd(),
                 TokenKind.Or => RunOr(),
+                TokenKind.Less => RunLess(),
+                TokenKind.LessOrEqual => RunLessOrEqual(),
+                TokenKind.Greater => RunGreater(),
+                TokenKind.GreaterOrEqual => RunGreaterOrEqual(),
+                TokenKind.Equal => RunEqual(),
+                TokenKind.NotEqual => RunNotEqual(),
                 _ => throw new Exception($"unexpected operator: {node.Operator.Kind}")
             };
 
             object RunAnd() => (bool)left && (bool)right;
 
             object RunOr() => (bool)left || (bool)right;
+
+            object RunLess() => (int)left < (int)right;
+
+            object RunLessOrEqual() => (int)left <= (int)right;
+
+            object RunGreater() => (int)left > (int)right;
+
+            object RunGreaterOrEqual() => (int)left >= (int)right;
+
+            object RunEqual() =>
+                left is string || right is string ? StringValue(left) == StringValue(right)
+                : left is bool || right is bool ? (bool)left == (bool)right
+                : (int)left == (int)right;
+
+            object RunNotEqual() => 
+                left is string || right is string ? StringValue(left) != StringValue(right)
+                : left is bool || right is bool ? (bool)left != (bool)right
+                : (int)left != (int)right;
         }
 
         object StringValue(object v) => v switch
