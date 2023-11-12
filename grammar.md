@@ -10,6 +10,17 @@ $$
         \end{cases} \\
     [\text{Expression}] &\to
         \begin{cases}
+            [\text{Term}] \\
+            [\text{BinaryExpression}] \\
+        \end{cases} \\
+        \\
+    [\text{BinaryExpression}] &\to
+        \begin{cases}
+            [\text{Expression}] \text{+} [\text{Expression}]\\
+        \end{cases} \\
+        \\
+    [\text{Term}] &\to
+        \begin{cases}
             [\text{number}] \\
             [\text{string}] \\
             [\text{identifier}] \\

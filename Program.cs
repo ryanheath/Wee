@@ -59,10 +59,17 @@ internal static class Lexer
         Token ReadToken()
         {
             var ch = (char)reader.Read();
-            if (TokenKindMap.TryGetValue(ch, out var kind))
+
+            if (TokenBinaryOperatorMap.TryGetValue(ch, out var kind))
+            {
+                return new TokenBinaryOperator(kind);
+            }
+
+            if (TokenKindMap.TryGetValue(ch, out kind))
             {
                 return new Token(kind);
             }
+
             throw new Exception($"invalid character: '{ch}'");
         }
 
@@ -115,10 +122,6 @@ internal static class Lexer
 
     static readonly Dictionary<char, TokenKind> TokenKindMap = new()
     {
-        { '+', TokenKind.Plus },
-        { '-', TokenKind.Minus },
-        { '*', TokenKind.Asterisk },
-        { '/', TokenKind.Slash },
         { '(', TokenKind.LParen },
         { ')', TokenKind.RParen },
         { ';', TokenKind.SemiColon },
@@ -136,6 +139,14 @@ internal static class Lexer
     {
         { "true", TokenKind.True },
         { "false", TokenKind.False },
+    };
+
+    static readonly Dictionary<char, TokenKind> TokenBinaryOperatorMap = new()
+    {
+        { '+', TokenKind.Plus },
+        { '-', TokenKind.Minus },
+        { '*', TokenKind.Asterisk },
+        { '/', TokenKind.Slash },
     };
 }
 
@@ -170,6 +181,8 @@ internal record TokenIdentifier(string Name) : Token(TokenKind.Identifier);
 internal record TokenString(string Value) : Token(TokenKind.String);
 
 internal record TokenBoolean(bool Value) : Token(TokenKind.Boolean);
+
+internal record TokenBinaryOperator(TokenKind Kind) : Token(Kind);
 
 internal static class Parser
 {
@@ -220,7 +233,7 @@ internal static class Parser
         {
             ConsumeToken(TokenKind.Return);
 
-            var value = TryParseValue();
+            var value = TryParseExpression();
 
             ConsumeToken(TokenKind.SemiColon);
 
@@ -235,7 +248,7 @@ internal static class Parser
 
             ConsumeToken(TokenKind.Equal);
 
-            var value = ParseValue();
+            var value = ParseExpression();
 
             ConsumeToken(TokenKind.SemiColon);
 
@@ -246,7 +259,7 @@ internal static class Parser
         {
             ConsumeToken(TokenKind.Print);
 
-            var value = TryParseValue();
+            var value = TryParseExpression();
 
             ConsumeToken(TokenKind.SemiColon);
 
@@ -255,11 +268,37 @@ internal static class Parser
 
         NodeIdentifier ParseIdentifier() => new (ConsumeTokenAs<TokenIdentifier>().Name);
 
-        NodeValue? TryParseValue() => 
-            (NodeValue?)TryParseBoolean()
-            ?? (NodeValue?)TryParseInteger()
-            ?? (NodeValue?)TryParseString()
-            ?? TryParseIdentifier();
+        NodeExpression ParseExpression()
+            => TryParseExpression() ?? throw new Exception($"invalid token: {tokens.Peek()}, expected integer, boolean or string value");
+
+        NodeExpression? TryParseExpression() => TryBinaryExpression();
+
+        NodeExpression? TryBinaryExpression()
+        {
+            var leftTerm = TryParseTerm();
+
+            if (leftTerm is null)
+            {
+                return null;
+            }
+
+            var op = TryConsumeToken<TokenBinaryOperator>();
+
+            if (op is null)
+            {
+                return leftTerm; // there is no operator, so this is just a term
+            }
+
+            var rightTerm = ParseExpression();
+
+            return new NodeBinaryExpression(leftTerm, op, rightTerm);
+        }
+
+        NodeTerm? TryParseTerm() =>
+            TryParseBoolean()
+            ?? TryParseInteger()
+            ?? TryParseString()
+            ?? (NodeTerm?)TryParseIdentifier();
 
         NodeString? TryParseString()
         {
@@ -285,9 +324,6 @@ internal static class Parser
             return token is null ? null : new (token.Name);
         }
 
-        NodeValue ParseValue()
-            => TryParseValue() ?? throw new Exception($"invalid token: {tokens.Peek()}, expected integer, boolean or string value");
-
         void ConsumeToken(TokenKind kind)
         {
             var token = tokens.Dequeue();
@@ -307,23 +343,27 @@ internal static class Parser
 
 internal abstract record Node;
 
-internal abstract record NodeValue : Node;
+internal abstract record NodeExpression : Node;
 
-internal record NodeString(string Value) : NodeValue;
+internal abstract record NodeTerm : NodeExpression;
 
-internal record NodeInteger(int Value) : NodeValue;
+internal record NodeBinaryExpression(NodeExpression Left, TokenBinaryOperator Operator, NodeExpression Right) : NodeExpression;
 
-internal record NodeBoolean(bool Value) : NodeValue;
+internal record NodeString(string Value) : NodeTerm;
 
-internal record NodeIdentifier(string Name) : NodeValue;
+internal record NodeInteger(int Value) : NodeTerm;
+
+internal record NodeBoolean(bool Value) : NodeTerm;
+
+internal record NodeIdentifier(string Name) : NodeTerm;
 
 internal abstract record NodeStatement : Node;
 
-internal record NodeReturn(NodeValue? ReturnValue) : NodeStatement;
+internal record NodeReturn(NodeExpression? Value) : NodeStatement;
 
-internal record NodeLet(NodeIdentifier Identifier, NodeValue Value) : NodeStatement;
+internal record NodeLet(NodeIdentifier Identifier, NodeExpression Value) : NodeStatement;
 
-internal record NodePrint(NodeValue? PrintValue) : NodeStatement;
+internal record NodePrint(NodeExpression? Value) : NodeStatement;
 
 internal record NodeProgram(IEnumerable<NodeStatement> Statements) : Node;
 
@@ -347,8 +387,7 @@ internal static class Interpreter
         object? RunStatement(NodeStatement node)
         {
             // only return statements return a value
-            var r = node as NodeReturn;
-            if (r is not null)
+            if (node is NodeReturn r)
             {
                 return RunReturn(r);
             }
@@ -372,12 +411,12 @@ internal static class Interpreter
                 throw new Exception($"variable already defined: {node.Identifier.Name}");
             }
 
-            variables[node.Identifier.Name] = RunValue(node.Value);
+            variables[node.Identifier.Name] = RunExpression(node.Value);
         }
 
         void RunPrint(NodePrint node)
         {
-            var value = node.PrintValue is null ? "" : RunValue(node.PrintValue);
+            var value = node.Value is null ? "" : RunExpression(node.Value);
 
             var printValue = value switch
             {
@@ -388,14 +427,15 @@ internal static class Interpreter
             Console.WriteLine(printValue);
         }
 
-        object RunReturn(NodeReturn node) => node.ReturnValue is null ? 0 : RunValue(node.ReturnValue);
+        object RunReturn(NodeReturn node) => node.Value is null ? 0 : RunExpression(node.Value);
 
-        object RunValue(NodeValue node) => node switch
+        object RunExpression(NodeExpression node) => node switch
         {
             NodeBoolean b => b.Value,
             NodeInteger i => i.Value,
             NodeString s => s.Value,
             NodeIdentifier i => RunIdentifier(i),
+            NodeBinaryExpression bin => RunBinaryExpression(bin),
             _ => throw new Exception($"unexpected node: {node}")
         };
 
@@ -407,6 +447,31 @@ internal static class Interpreter
             }
 
             return value;
+        }
+
+        object RunBinaryExpression(NodeBinaryExpression node)
+        {
+            var left = RunExpression(node.Left);
+            var right = RunExpression(node.Right);
+
+            return node.Operator.Kind switch
+            {
+                TokenKind.Plus => RunAddition(),
+                TokenKind.Minus => RunSubtraction(),
+                TokenKind.Asterisk => RunMultiply(),
+                TokenKind.Slash => RunDivide(),
+                _ => throw new Exception($"unexpected operator: {node.Operator.Kind}")
+            };
+
+            object RunAddition() => left is string || right is string
+                ? left + right.ToString()
+                : (int)left + (int)right;
+
+            object RunSubtraction() => (int)left - (int)right;
+
+            object RunMultiply() => (int)left * (int)right;
+
+            object RunDivide() => (int)left / (int)right;
         }
     }
 }
