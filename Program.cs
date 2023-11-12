@@ -60,17 +60,9 @@ internal static class Lexer
         {
             var ch = (char)reader.Read();
 
-            if (TokenBinaryOperatorMap.TryGetValue(ch, out var kind))
-            {
-                return new TokenBinaryOperator(kind);
-            }
-
-            if (TokenKindMap.TryGetValue(ch, out kind))
-            {
-                return new Token(kind);
-            }
-
-            throw new Exception($"invalid character: '{ch}'");
+            return TokenBinaryOperatorMap.TryGetValue(ch, out var kind) ? new TokenBinaryOperator(kind)
+                : TokenKindMap.TryGetValue(ch, out kind) ? new Token(kind)
+                : throw new Exception($"invalid character: '{ch}'");
         }
 
         Token ReadInteger() => new TokenInteger(int.Parse(ReadChars(char.IsDigit)));
@@ -79,10 +71,9 @@ internal static class Lexer
         {
             var word = ReadChars(char.IsAsciiLetterOrDigit);
 
-            return TokenKeywordMap.TryGetValue(word, out var kind)
-                ? new Token(kind)
-                : TokenBooleanMap.TryGetValue(word, out kind)
-                ? new TokenBoolean(kind == TokenKind.True)
+            return TokenKeywordMap.TryGetValue(word, out var kind) ? new Token(kind)
+                : TokenBooleanMap.TryGetValue(word, out kind) ? new TokenBoolean(kind == TokenKind.True)
+                : TokenLogicalOperatorMap.TryGetValue(word, out kind) ? new TokenLogicalOperator(kind)
                 : new TokenIdentifier(word);
         }
 
@@ -141,6 +132,12 @@ internal static class Lexer
         { "false", TokenKind.False },
     };
 
+    static readonly Dictionary<string, TokenKind> TokenLogicalOperatorMap = new()
+    {
+        { "or", TokenKind.Or },
+        { "and", TokenKind.And },
+    };
+
     static readonly Dictionary<char, TokenKind> TokenBinaryOperatorMap = new()
     {
         { '+', TokenKind.Plus },
@@ -170,6 +167,8 @@ internal enum TokenKind
     True,
     False,
     Boolean,
+    And,
+    Or,
 }
 
 internal record Token(TokenKind Kind);
@@ -183,6 +182,8 @@ internal record TokenString(string Value) : Token(TokenKind.String);
 internal record TokenBoolean(bool Value) : Token(TokenKind.Boolean);
 
 internal record TokenBinaryOperator(TokenKind Kind) : Token(Kind);
+
+internal record TokenLogicalOperator(TokenKind Kind) : Token(Kind);
 
 internal static class Parser
 {
@@ -271,9 +272,9 @@ internal static class Parser
         NodeExpression ParseExpression()
             => TryParseExpression() ?? throw new Exception($"invalid token: {tokens.Peek()}, expected integer, boolean or string value");
 
-        NodeExpression? TryParseExpression() => TryBinaryExpression();
+        NodeExpression? TryParseExpression() => TryBinaryOrLogicalExpression();
 
-        NodeExpression? TryBinaryExpression()
+        NodeExpression? TryBinaryOrLogicalExpression()
         {
             var leftTerm = TryParseTerm();
 
@@ -282,7 +283,8 @@ internal static class Parser
                 return null;
             }
 
-            var op = TryConsumeToken<TokenBinaryOperator>();
+            var op = TryConsumeToken<TokenBinaryOperator>()
+                ?? (Token?)TryConsumeToken<TokenLogicalOperator>();
 
             if (op is null)
             {
@@ -291,7 +293,12 @@ internal static class Parser
 
             var rightTerm = ParseExpression();
 
-            return new NodeBinaryExpression(leftTerm, op, rightTerm);
+            return op switch 
+            {
+                TokenBinaryOperator b => new NodeBinaryExpression(leftTerm, b, rightTerm),
+                TokenLogicalOperator l => new NodeLogicalExpression(leftTerm, l, rightTerm),
+                _ => throw new Exception($"unexpected operator: {op}")
+            };
         }
 
         NodeTerm? TryParseTerm() =>
@@ -348,6 +355,8 @@ internal abstract record NodeExpression : Node;
 internal abstract record NodeTerm : NodeExpression;
 
 internal record NodeBinaryExpression(NodeExpression Left, TokenBinaryOperator Operator, NodeExpression Right) : NodeExpression;
+
+internal record NodeLogicalExpression(NodeExpression Left, TokenLogicalOperator Operator, NodeExpression Right) : NodeExpression;
 
 internal record NodeString(string Value) : NodeTerm;
 
@@ -418,13 +427,7 @@ internal static class Interpreter
         {
             var value = node.Value is null ? "" : RunExpression(node.Value);
 
-            var printValue = value switch
-            {
-                bool b => b ? "true" : "false",
-                _ => value.ToString()
-            };
-
-            Console.WriteLine(printValue);
+            Console.WriteLine(StringValue(value));
         }
 
         object RunReturn(NodeReturn node) => node.Value is null ? 0 : RunExpression(node.Value);
@@ -436,6 +439,7 @@ internal static class Interpreter
             NodeString s => s.Value,
             NodeIdentifier i => RunIdentifier(i),
             NodeBinaryExpression bin => RunBinaryExpression(bin),
+            NodeLogicalExpression log => RunLogicalExpression(log),
             _ => throw new Exception($"unexpected node: {node}")
         };
 
@@ -464,7 +468,7 @@ internal static class Interpreter
             };
 
             object RunAddition() => left is string || right is string
-                ? left + right.ToString()
+                ? StringValue(left) + StringValue(right).ToString()
                 : (int)left + (int)right;
 
             object RunSubtraction() => (int)left - (int)right;
@@ -473,5 +477,28 @@ internal static class Interpreter
 
             object RunDivide() => (int)left / (int)right;
         }
+
+        object RunLogicalExpression(NodeLogicalExpression node)
+        {
+            var left = RunExpression(node.Left);
+            var right = RunExpression(node.Right);
+
+            return node.Operator.Kind switch
+            {
+                TokenKind.And => RunAnd(),
+                TokenKind.Or => RunOr(),
+                _ => throw new Exception($"unexpected operator: {node.Operator.Kind}")
+            };
+
+            object RunAnd() => (bool)left && (bool)right;
+
+            object RunOr() => (bool)left || (bool)right;
+        }
+
+        object StringValue(object v) => v switch
+        {
+            bool b => b ? "true" : "false",
+            _ => v
+        };
     }
 }
