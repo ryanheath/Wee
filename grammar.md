@@ -13,8 +13,14 @@ $$
             [\text{number}] \\
             [\text{string}] \\
             [\text{identifier}] \\
+            [\text{boolean}] \\
         \end{cases} \\
         \\
+    [\text{boolean}] &\to
+        \begin{cases}
+            \text{true} \\
+            \text{false} \\
+        \end{cases} \\
     [\text{number}] &\to \text[0-9]+\text[0-9]^* \\
     [\text{string}] &\to
         \begin{cases}

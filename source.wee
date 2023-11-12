@@ -1,7 +1,11 @@
 let x = 24;
 let y = "abc";
+let z = true;
+let a = false;
 print x;
 print;
 print "***";
 print y;
+print z;
+print a;
 return x;

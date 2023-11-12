@@ -72,7 +72,11 @@ internal static class Lexer
         {
             var word = ReadChars(char.IsAsciiLetterOrDigit);
 
-            return TokenKeywordMap.TryGetValue(word, out var kind) ? new Token(kind) : new TokenIdentifier(word);
+            return TokenKeywordMap.TryGetValue(word, out var kind)
+                ? new Token(kind)
+                : TokenBooleanMap.TryGetValue(word, out kind)
+                ? new TokenBoolean(kind == TokenKind.True)
+                : new TokenIdentifier(word);
         }
 
         Token ReadString()
@@ -127,6 +131,12 @@ internal static class Lexer
         { "let", TokenKind.Let },
         { "print", TokenKind.Print },
     };
+
+    static readonly Dictionary<string, TokenKind> TokenBooleanMap = new()
+    {
+        { "true", TokenKind.True },
+        { "false", TokenKind.False },
+    };
 }
 
 internal enum TokenKind
@@ -146,6 +156,9 @@ internal enum TokenKind
     Return,
     Let,
     Print,
+    True,
+    False,
+    Boolean,
 }
 
 internal record Token(TokenKind Kind);
@@ -155,6 +168,8 @@ internal record TokenInteger(int Value) : Token(TokenKind.Integer);
 internal record TokenIdentifier(string Name) : Token(TokenKind.Identifier);
 
 internal record TokenString(string Value) : Token(TokenKind.String);
+
+internal record TokenBoolean(bool Value) : Token(TokenKind.Boolean);
 
 internal static class Parser
 {
@@ -240,11 +255,21 @@ internal static class Parser
 
         NodeIdentifier ParseIdentifier() => new (ConsumeTokenAs<TokenIdentifier>().Name);
 
-        NodeValue? TryParseValue() => (NodeValue?)TryParseInteger() ?? (NodeValue?)TryParseString() ?? TryParseIdentifier();
+        NodeValue? TryParseValue() => 
+            (NodeValue?)TryParseBoolean()
+            ?? (NodeValue?)TryParseInteger()
+            ?? (NodeValue?)TryParseString()
+            ?? TryParseIdentifier();
 
         NodeString? TryParseString()
         {
             var token = TryConsumeToken<TokenString>();
+            return token is null ? null : new (token.Value);
+        }
+
+        NodeBoolean? TryParseBoolean()
+        {
+            var token = TryConsumeToken<TokenBoolean>();
             return token is null ? null : new (token.Value);
         }
 
@@ -261,7 +286,7 @@ internal static class Parser
         }
 
         NodeValue ParseValue()
-            => TryParseValue() ?? throw new Exception($"invalid token: {tokens.Peek()}, expected integer or string value");
+            => TryParseValue() ?? throw new Exception($"invalid token: {tokens.Peek()}, expected integer, boolean or string value");
 
         void ConsumeToken(TokenKind kind)
         {
@@ -287,6 +312,8 @@ internal abstract record NodeValue : Node;
 internal record NodeString(string Value) : NodeValue;
 
 internal record NodeInteger(int Value) : NodeValue;
+
+internal record NodeBoolean(bool Value) : NodeValue;
 
 internal record NodeIdentifier(string Name) : NodeValue;
 
@@ -348,12 +375,24 @@ internal static class Interpreter
             variables[node.Identifier.Name] = RunValue(node.Value);
         }
 
-        void RunPrint(NodePrint node) => Console.WriteLine(node.PrintValue is null ? "" : RunValue(node.PrintValue));
+        void RunPrint(NodePrint node)
+        {
+            var value = node.PrintValue is null ? "" : RunValue(node.PrintValue);
+
+            var printValue = value switch
+            {
+                bool b => b ? "true" : "false",
+                _ => value.ToString()
+            };
+
+            Console.WriteLine(printValue);
+        }
 
         object RunReturn(NodeReturn node) => node.ReturnValue is null ? 0 : RunValue(node.ReturnValue);
 
         object RunValue(NodeValue node) => node switch
         {
+            NodeBoolean b => b.Value,
             NodeInteger i => i.Value,
             NodeString s => s.Value,
             NodeIdentifier i => RunIdentifier(i),
